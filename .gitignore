@@ -1,0 +1,29 @@
+# Build / IDE
+build/
+cmake-build-*/
+[Cc]MakeCache.txt
+[Cc]MakeFiles/
+.vs/
+.idea/
+Release/
+Debug/
+*.obj
+*.pdb
+*.ilk
+
+# Binaries
+*.exe
+*.dll
+*.lib
+
+# Logs
+*.log
+
+# Keep our data artifacts:
+!/traces/
+!/timing/
+# Ignore large datasets and traces
+traceFiles/
+*.trace
+*uniq*.txt
+all_uniq_tokens_*.txt
