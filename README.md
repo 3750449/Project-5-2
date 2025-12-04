@@ -15,28 +15,33 @@
 
 ##Implementation Details
 
-This implements Batch-then-Drain traces → Priority Queue timing (Linear baseline, Binary heap, Binomial queue, Quadratic “Oracle”).
+This project replays LRU traces against a provided open-addressed hash table with two probe styles:
 
-It replays batch_then_drain traces and records timing to CSV using the same pipeline as Huffman: generate traces → harness replay → CSV → plot.
+single (linear probing)
 
-Run protocol: 1 warm-up (untimed), then 7 timed passes, report median elapsed (ms).
+double (double hashing)
 
-Single-seed policy (to match the example): seed = 101.
-Ns: 2^10 … 2^17.
-CSV schema matches Huffman:
-impl,profile,trace_path,N,seed,elapsed_ms,ops_total,inserts,findmins,deletemins,extractmins.
+For each trace (e.g., lru_profile_N_4096_S_23.trace) the harness:
+
+runs 1 warm-up (untimed) and 7 timed passes, reports median elapsed (ms)
+
+resets the table between runs
 
 ---
 
 ##Files of interest
 
-HashTableDictionary.hpp / HashTableDictionary.cpp — printStats(), printMask(), csvStatsHeader(), csvStats(), printBeforeAndAfterCompactionMaps() or printActiveDeleteMap()
+HashMapAnalysis_StudentFiles/HashTableDictionary.hpp|.cpp
 
-main.cpp — harness driver (reads a trace, replays operations, times runs, prints CSV + maps)
+Stats + maps: printStats(), printMask(), csvStatsHeader(), csvStats(), map/bitstring helpers
 
-Operations.hpp — defines the I key / E key op structure
+HashMapAnalysis_StudentFiles/main.cpp — trace replay harness (reads trace, times runs, prints CSV + maps)
 
-traces/ directory with lru_profile_N_*_S_23.trace
+HashMapAnalysis_StudentFiles/Operations.hpp — op struct (I key, E key)
+
+HashMapAnalysis_StudentFiles/traceFiles/lru_profile_N_*_S_23.trace — provided LRU traces
+
+timing/ — CSVs and captured maps (your outputs)
 
 ---
 
@@ -105,4 +110,82 @@ mkdir -p build && cd build
 cmake ..
 make
 # binary: ./lru_harness
+
+# From project root
+.\build\Release\HashTablesOpenAddressing.exe HashMapAnalysis_StudentFiles\traceFiles\lru_profile_N_4096_S_23.trace  > .\timing\lru\N_4096_double_compaction_off.txt
+
+////
+
+5.1 Expectations vs. Observations
+
+Expectation (theory reminder):
+
+Small N → single tends to be competitive/faster (1 hash + contiguous probes)
+Large N → double tends to win (less clustering to fewer probes)
+
+Observation (elapsed time vs N):
+
+•  At N = 1024 (single, compaction_on): average_probes ≈ 14.938, eff_load_factor ≈ 93%, available ≈ 6%
+•  At N = 1024 (double, compaction_on): average_probes ≈ 6.281,  eff_load_factor ≈ 93%, available ≈ 6%
+•  At N = 1024, double has fewer probes than single
+
+////
+
+5.1.2 “Work” per op vs. wall-clock
+
+•  average_probes = touched slots at N=1024:
+
+    single = 14.938
+    double = 6.281
+
+•  Fewer probes because lower time
+
+Filled line:
+
+•  At N = 1024, the average_probes favors double, probes for double vs single is consistent with double’s advantage at higher occupancy even with compaction_on
+
+////
+
+5.1.3 Hashing cost & locality
+
+•  single: one hash, contiguous walk
+•  double: extra hash, non-contiguous jumps
+
+Constant hashing costs dominate when probe paths are short as small N and at N=1024, paths are not tiny, but double’s lower clustering wins on probe count
+
+////
+
+5.1.4 Compaction effects
+
+Compaction removes tombstones to shorter probe chains, but compaction can spike time
+
+•  At N=1024 (single, compaction_on): 27 compactions
+•  At N=1024 (double, compaction_on): 33 compactions
+•  End-of-run occupancy (both): available ≈ 6%, tombstones ≈ 13–14%, eff_load_factor ≈ 93%
+
+Filled line:
+
+•  At N=1024, single triggered 27 compactions and double 33
+•  After the last compaction, the average_probes from single was 14.938 and was double ≈ 6.281
+
+////
+
+5.1.5 Throughput & latency
+
+•  Throughput = ops_total / elapsed_ms
+•  Latency = elapsed_ms / ops_total
+
+At N=1024 double’s much lower average_probes suggests higher throughput and lower latency than single
+
+////
+
+5.1.7 Maps & histograms
+Using the combined ACTIVE+DELETED = 1 vs AVAILABLE = 0 bitstrings:
+
+•  With compaction_on, AVAILABLE = 6% and DELETED = 13–14%
+•  Multiple compactions occurred (single: 27; double: 33), so the tombstones are being reset
+
+•  load_factor_pct = ACTIVE / M = 1024/1279 = 80%
+•  tombstones_pct = DELETED / M = 176–177 / 1279 = 13–14%
+•  eff_load_factor_pct = ACTIVE / (M − DELETED) = 1024 / (1279 − 176) ≈ 93%
 
